@@ -1,0 +1,34 @@
+name: GKI Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract gki.tar.gz
+        run: |
+          if [ -f gki.tar.gz ]; then
+            tar -xzf gki.tar.gz
+          else
+            echo "gki.tar.gz not found, skipping extraction"
+          fi
+
+      - name: Create and enable swapfile
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          sudo swapon --show
+
+      - name: Build kernel
+        run: |
+          BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
