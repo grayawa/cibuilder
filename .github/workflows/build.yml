@@ -85,6 +85,8 @@ jobs:
           sed -i '/CONFIG_KASAN/d; /CONFIG_KSU/d' common/arch/arm64/configs/gki_defconfig
           echo '# CONFIG_KASAN is not set' >> common/arch/arm64/configs/gki_defconfig
           echo 'CONFIG_KSU=m' >> common/arch/arm64/configs/gki_defconfig
+          make -C common O=$PWD/out/defconfig-gen ARCH=arm64 gki_defconfig savedefconfig
+          cp out/defconfig-gen/defconfig common/arch/arm64/configs/gki_defconfig
           LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Package artifacts
