@@ -75,6 +75,25 @@ jobs:
         run: |
           LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
+      - name: Package artifacts
+        working-directory: kernel
+        run: |
+          DIST_DIR=$(find out -type d -name dist | head -1)
+          echo "DIST_DIR=$DIST_DIR"
+          ls -la "$DIST_DIR"/
+          mkdir -p release
+          find "$DIST_DIR" -maxdepth 1 \( -name 'Image' -o -name 'Image.gz' -o -name 'Image.lz4' -o -name '*.ko' \) \
+            -exec cp -v {} release/ \;
+          tar -czf gki-kernelsu.tar.gz -C release .
+          echo "Packaged contents:"
+          tar -tzf gki-kernelsu.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gki-kernelsu
+          path: kernel/gki-kernelsu.tar.gz
+
       - name: Setup tmate session
         if: failure()
         uses: mxschmitt/action-tmate@v3
