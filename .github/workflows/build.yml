@@ -70,16 +70,10 @@ jobs:
         run: |
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
 
-      - name: Create kernel config fragment
-        working-directory: kernel
-        run: |
-          cat > config-fragment.sh << 'FRAGMENT_EOF'
-          POST_DEFCONFIG_CMDS='${KERNEL_DIR}/scripts/config --file ${OUT_DIR}/.config --disable KASAN --module KSU && make ${TOOL_ARGS} O=${OUT_DIR} olddefconfig'
-          FRAGMENT_EOF
-
       - name: Build kernel
         working-directory: kernel
         run: |
+          echo "POST_DEFCONFIG_CMDS='\${KERNEL_DIR}/scripts/config --file \${OUT_DIR}/.config --disable KASAN --module KSU && make \${TOOL_ARGS} O=\${OUT_DIR} olddefconfig'" > config-fragment.sh
           LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 BUILD_CONFIG_FRAGMENTS=config-fragment.sh build/build.sh
 
       - name: Package artifacts
