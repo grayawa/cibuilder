@@ -73,8 +73,8 @@ jobs:
       - name: Build kernel
         working-directory: kernel
         run: |
-          echo "POST_DEFCONFIG_CMDS='\${KERNEL_DIR}/scripts/config --file \${OUT_DIR}/.config --disable KASAN --module KSU && make \${TOOL_ARGS} O=\${OUT_DIR} olddefconfig'" > config-fragment.sh
-          LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 BUILD_CONFIG_FRAGMENTS=config-fragment.sh build/build.sh
+          common/scripts/config --file common/arch/arm64/configs/gki_defconfig --disable KASAN --module KSU
+          LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Package artifacts
         working-directory: kernel
