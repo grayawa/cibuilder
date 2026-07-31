@@ -85,12 +85,21 @@ jobs:
         run: |
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
 
+      - name: Setup for LKM
+        working-directory: kernel
+        run: |
+          pip install ast-grep-cli
+          sudo apt-get install llvm-15 -y
+          ast-grep -U -p '$$$ check_exports($$$) {$$$}' -r '' common/scripts/mod/modpost.c
+          ast-grep -U -p 'check_exports($$$);' -r '' common/scripts/mod/modpost.c
+          sed -i '/config KSU/,/help/{s/default y/default m/}' common/drivers/kernelsu/Kconfig
+          grep -q 'drivers/kernelsu/kernelsu.ko' common/android/gki_aarch64_modules 2>/dev/null || echo 'drivers/kernelsu/kernelsu.ko' >> common/android/gki_aarch64_modules
+
       - name: Build kernel
         working-directory: kernel
         run: |
           sed -i '/CONFIG_KASAN/d; /CONFIG_KSU/d' common/arch/arm64/configs/gki_defconfig
           echo '# CONFIG_KASAN is not set' >> common/arch/arm64/configs/gki_defconfig
-          echo 'CONFIG_KSU=m' >> common/arch/arm64/configs/gki_defconfig
           echo 'CONFIG_LOCALVERSION="-g9cb2f620a9a8"' >> common/arch/arm64/configs/gki_defconfig
           echo '# CONFIG_LOCALVERSION_AUTO is not set' >> common/arch/arm64/configs/gki_defconfig
           make -C common O=$PWD/out/defconfig-gen ARCH=arm64 gki_defconfig savedefconfig
@@ -114,6 +123,7 @@ jobs:
           ls -la "$DIST_DIR"/
           mkdir -p release
           cp -v "$DIST_DIR"/kernelsu.ko release/ 2>/dev/null || find "$DIST_DIR" -name 'kernelsu.ko' -exec cp -v {} release/ \;
+          llvm-strip-15 -d release/kernelsu.ko || true
           tar -czf gki-kernelsu.tar.gz -C release .
           echo "Packaged contents:"
           tar -tzf gki-kernelsu.tar.gz
