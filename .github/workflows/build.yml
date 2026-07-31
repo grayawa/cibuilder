@@ -46,10 +46,12 @@ jobs:
             && git -C common fetch --depth=1 origin 8f32bdea05abf85dd10d6202963f7e9bdc55c717 \
             && git -C common checkout FETCH_HEAD ) &
           P_OCULUS=$!
-          # 2) clang 14 prebuilt (Git LFS will smudge the real binaries during clone)
+          # 2) clang 14 prebuilt (sparse + git lfs pull to materialize the real binaries)
           (
-            git clone --depth=1 -b llvm-r450784 \
-              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang
+            git clone --depth=1 --sparse -b llvm-r450784 \
+              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang \
+            && git -C clang sparse-checkout set clang-r450784c \
+            && git -C clang lfs pull
           ) &
           P_CLANG=$!
           # 3) ReSukiSU (off-tree module source)
