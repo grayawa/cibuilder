@@ -66,12 +66,16 @@ jobs:
           ) &
           CLEANUP_PID=$!
 
-          # Init and sync kernel source
+          # Init and sync kernel source (manifest branch pins the SPL kernel)
           mkdir -p kernel && cd kernel
-          repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
-          repo sync -j$(nproc) -c --no-tags
-          git -C common fetch --depth=1 https://android.googlesource.com/kernel/common tag android12-5.10-2025-09_r5
-          git -C common checkout android12-5.10-2025-09_r5
+          repo init --depth=1 -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10-2025-09
+          REMOTE_BRANCH=$(git ls-remote https://android.googlesource.com/kernel/common android12-5.10-2025-09)
+          if grep -q deprecated <<< $REMOTE_BRANCH; then
+            echo "Found deprecated branch: android12-5.10-2025-09"
+            sed -i 's/"android12-5.10-2025-09"/"deprecated\/android12-5.10-2025-09"/g' .repo/manifests/default.xml
+            cat .repo/manifests/default.xml
+          fi
+          repo sync -c -j$(nproc) --no-tags
 
           wait $CLEANUP_PID
           df -h
@@ -92,7 +96,14 @@ jobs:
           make -C common O=$PWD/out/defconfig-gen ARCH=arm64 gki_defconfig savedefconfig
           cp out/defconfig-gen/defconfig common/arch/arm64/configs/gki_defconfig
           grep -q 'drivers/kernelsu/kernelsu.ko' common/android/gki_aarch64_modules 2>/dev/null || echo 'drivers/kernelsu/kernelsu.ko' >> common/android/gki_aarch64_modules
-          echo 'KMI_SYMBOL_LIST_STRICT_MODE=0' >> common/build.config.gki.aarch64
+
+          # Official KernelSU build.sh patches: don't abort on unknown symbol / modules.order / ABI check
+          TARGET_FILE="build/kernel/build.sh"
+          [ -e "$TARGET_FILE" ] || TARGET_FILE="build/build.sh"
+          sed -i 's/needs unknown symbol/Dont abort when unknown symbol/g' $TARGET_FILE || true
+          sed -i 's/if ! diff -u "\${KERNEL_DIR}\/\${MODULES_ORDER}" "\${OUT_DIR}\/modules\.order"; then/if false; then/g' $TARGET_FILE || true
+          sed -i 's@${ROOT_DIR}/build/abi/compare_to_symbol_list@echo@g' $TARGET_FILE || true
+
           KBUILD_MODPOST_WARN=1 LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Package artifacts
@@ -102,8 +113,7 @@ jobs:
           echo "DIST_DIR=$DIST_DIR"
           ls -la "$DIST_DIR"/
           mkdir -p release
-          find "$DIST_DIR" -maxdepth 1 \( -name 'Image' -o -name 'Image.gz' -o -name 'Image.lz4' -o -name '*.ko' \) \
-            -exec cp -v {} release/ \;
+          cp -v "$DIST_DIR"/kernelsu.ko release/ 2>/dev/null || find "$DIST_DIR" -name 'kernelsu.ko' -exec cp -v {} release/ \;
           tar -czf gki-kernelsu.tar.gz -C release .
           echo "Packaged contents:"
           tar -tzf gki-kernelsu.tar.gz
