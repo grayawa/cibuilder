@@ -9,6 +9,20 @@ jobs:
     steps:
       - name: Setup env, install deps and clone sources (parallel)
         run: |
+          # Disk cleanup in background (free space for the large clang toolchain)
+          (
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+              /opt/hostedtoolcache/CodeQL /usr/local/.ghcup /usr/local/share/powershell \
+              /usr/local/share/chromium /usr/local/lib/node_modules /opt/microsoft \
+              /usr/share/miniconda /usr/local/share/vcpkg /home/linuxbrew \
+              /usr/local/julia* /usr/share/swift /opt/hostedtoolcache/go \
+              /opt/hostedtoolcache/node /opt/hostedtoolcache/Python \
+              /opt/hostedtoolcache/PyPy /opt/hostedtoolcache/Ruby
+            sudo apt-get clean
+            sudo journalctl --vacuum-size=10M
+          ) &
+          P_CLEAN=$!
+
           # Swapfile in background (dd of 10GB takes time)
           (
             sudo swapoff /swapfile 2>/dev/null || true
@@ -29,12 +43,10 @@ jobs:
             && git -C common fetch --depth=1 origin 8f32bdea05abf85dd10d6202963f7e9bdc55c717 \
             && git -C common checkout FETCH_HEAD ) &
           P_OCULUS=$!
-          # 2) clang 14 prebuilt (sparse: only clang-r450784c, ~5GB instead of 30GB)
-          ( git clone --depth=1 -b llvm-r450784 --filter=blob:none --no-checkout \
+          # 2) clang 14 prebuilt (reliable depth-1 sparse clone; no blob filter needed)
+          ( git clone --depth=1 --sparse -b llvm-r450784 \
               https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang \
-            && git -C clang sparse-checkout init --cone \
-            && git -C clang sparse-checkout set clang-r450784c \
-            && git -C clang checkout ) &
+            && git -C clang sparse-checkout set clang-r450784c ) &
           P_CLANG=$!
           # 3) ReSukiSU (off-tree module source)
           ( git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU KernelSU ) &
@@ -46,6 +58,7 @@ jobs:
           P_APT=$!
 
           # Wait for each job individually so a failure in any one is not masked
+          wait $P_CLEAN || exit 1
           wait $P_OCULUS || exit 1
           wait $P_CLANG || exit 1
           wait $P_KSU || exit 1
