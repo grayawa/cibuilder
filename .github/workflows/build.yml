@@ -71,10 +71,14 @@ jobs:
           ) &
           CLEANUP_PID=$!
 
-          # Init and sync kernel source (manifest branch pins the SPL kernel)
+          # Init and sync build system + toolchain from ACK manifest
           mkdir -p kernel && cd kernel
           repo init --depth=1 -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10-2025-09 --repo-rev=v2.16
           repo sync -c -j$(nproc) --no-tags
+
+          # Replace ACK common with Oculus Quest 3 kernel source
+          rm -rf common
+          git clone --depth=1 -b oculus-quest3-kernel-master https://github.com/facebookincubator/oculus-linux-kernel.git common
 
           wait $CLEANUP_PID
           df -h
@@ -128,7 +132,7 @@ jobs:
           sed -i 's@${ROOT_DIR}/build/abi/compare_to_symbol_list@echo@g' $TARGET_FILE || true
           sed -i 's/needs unknown symbol/Dont abort when unknown symbol/g' build/kernel/*.sh || true
 
-          KBUILD_MODPOST_WARN=1 LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang"
+          KBUILD_MODPOST_WARN=1 SKIP_MRPROPER=1 LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang"
 
       - name: Prepare artifacts
         working-directory: kernel
