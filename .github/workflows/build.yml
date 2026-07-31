@@ -72,7 +72,7 @@ jobs:
           wait $SWAP_PID || exit 1
 
           # Verify the clang toolchain was materialized by the sparse checkout
-          CLANG_BIN=$(find $PWD/clang -type d -path '*clang-r45078*/bin' | sort | tail -1)
+          CLANG_BIN=$PWD/clang/clang-r450784c/bin
           if [ -z "$CLANG_BIN" ] || [ ! -x "$CLANG_BIN/clang" ]; then
             echo "clang toolchain not materialized. Contents of clang/:"
             ls -la $PWD/clang/ 2>/dev/null || true
@@ -93,7 +93,7 @@ jobs:
       - name: Add ReSukiSU, configure and build kernel
         working-directory: kernel
         run: |
-          export PATH="$(find $PWD/clang -type d -path '*clang-r45078*/bin' | sort | tail -1):$PATH"
+          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
 
           # Add ReSukiSU Kconfig to kernel tree, but keep the module itself off-tree
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
@@ -116,7 +116,7 @@ jobs:
       - name: Build ReSukiSU off-tree and package
         working-directory: kernel
         run: |
-          export PATH="$(find $PWD/clang -type d -path '*clang-r45078*/bin' | sort | tail -1):$PATH"
+          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
 
           make -C common O=$PWD/out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
