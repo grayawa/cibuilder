@@ -101,6 +101,11 @@ jobs:
           echo 'CONFIG_LOCALVERSION="-g9cb2f620a9a8"' >> common/arch/arm64/configs/gki_defconfig
           echo '# CONFIG_LOCALVERSION_AUTO is not set' >> common/arch/arm64/configs/gki_defconfig
           sed -i 's/echo "+"/echo ""/g' common/scripts/setlocalversion
+          # Make Kconfig parsing independent of the CC/LD env (Meta kernel quirk)
+          sed -i 's|$(CC) --version|gcc --version|g' common/scripts/Kconfig.include
+          sed -i 's|$(LD) --version|ld --version|g' common/scripts/Kconfig.include
+          sed -i 's|gcc-version.sh $(CC)|gcc-version.sh gcc|g' common/init/Kconfig
+          sed -i 's|clang-version.sh $(CC)|clang-version.sh gcc|g' common/init/Kconfig
 
       - name: Make working directory clean to avoid dirty
         working-directory: kernel
