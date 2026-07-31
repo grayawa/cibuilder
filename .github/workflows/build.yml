@@ -84,6 +84,12 @@ jobs:
           clang --version
           ld.lld --version
 
+      - name: Debug via tmate (on failure)
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
+
       - name: Add ReSukiSU, configure and build kernel
         working-directory: kernel
         run: |
