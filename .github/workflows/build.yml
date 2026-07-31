@@ -68,8 +68,8 @@ jobs:
 
           # Init and sync kernel source
           mkdir -p kernel && cd kernel
-          repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10
-          repo sync -j$(nproc) -c --no-tags
+          repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
+          repo sync -j$(nproc) -c --no-tags --depth=1
 
           wait $CLEANUP_PID
           df -h
