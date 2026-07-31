@@ -26,7 +26,8 @@ jobs:
           sudo apt-get install -y git-core gnupg flex bison build-essential zip curl \
             zlib1g-dev libc6-dev-i386 libncurses-dev x11proto-core-dev libx11-dev \
             lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip \
-            fontconfig python3 python3-pip llvm-15
+            fontconfig python3 python3-pip llvm-15 clang-15
+          sudo ln -sf /usr/bin/clang-15 /usr/bin/clang
           pip install ast-grep-cli
 
           # Install repo tool
@@ -122,6 +123,7 @@ jobs:
           sed -i 's@${ROOT_DIR}/build/abi/compare_to_symbol_list@echo@g' $TARGET_FILE || true
           sed -i 's/needs unknown symbol/Dont abort when unknown symbol/g' build/kernel/*.sh || true
 
+          export CC=clang
           KBUILD_MODPOST_WARN=1 SKIP_MRPROPER=1 LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Prepare artifacts
