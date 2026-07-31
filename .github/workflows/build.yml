@@ -107,11 +107,11 @@ jobs:
           echo '# CONFIG_LOCALVERSION_AUTO is not set' >> common/arch/arm64/configs/gki_defconfig
           sed -i 's/echo "+"/echo ""/g' common/scripts/setlocalversion
 
-          # Build kernel to vmlinux (CC=clang resolves Kconfig; thin LTO is faster)
+          # Build kernel to vmlinux (CC=clang resolves Kconfig; thin LTO is faster; skip dtbs)
           make -C common O=$PWD/out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- LTO=thin gki_defconfig
           make -C common O=$PWD/out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- LTO=thin -j$(nproc)
+            CROSS_COMPILE=aarch64-linux-gnu- LTO=thin vmlinux -j$(nproc)
 
       - name: Build ReSukiSU off-tree and package
         working-directory: kernel
