@@ -71,16 +71,14 @@ jobs:
           ) &
           CLEANUP_PID=$!
 
-          # Init and sync kernel source (manifest branch pins the SPL kernel)
+          # Init and sync build system + toolchain from ACK manifest
           mkdir -p kernel && cd kernel
           repo init --depth=1 -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10-2025-09 --repo-rev=v2.16
-          REMOTE_BRANCH=$(git ls-remote https://android.googlesource.com/kernel/common android12-5.10-2025-09)
-          if grep -q deprecated <<< $REMOTE_BRANCH; then
-            echo "Found deprecated branch: android12-5.10-2025-09"
-            sed -i 's/"android12-5.10-2025-09"/"deprecated\/android12-5.10-2025-09"/g' .repo/manifests/default.xml
-            cat .repo/manifests/default.xml
-          fi
           repo sync -c -j$(nproc) --no-tags
+
+          # Replace ACK common with Oculus Quest 3 kernel source
+          rm -rf common
+          git clone --depth=1 -b oculus-quest3-kernel-master https://github.com/facebookincubator/oculus-linux-kernel.git common
 
           wait $CLEANUP_PID
           df -h
