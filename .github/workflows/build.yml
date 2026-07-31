@@ -87,6 +87,7 @@ jobs:
           echo 'CONFIG_KSU=m' >> common/arch/arm64/configs/gki_defconfig
           make -C common O=$PWD/out/defconfig-gen ARCH=arm64 gki_defconfig savedefconfig
           cp out/defconfig-gen/defconfig common/arch/arm64/configs/gki_defconfig
+          grep -q 'drivers/kernelsu/kernelsu.ko' common/android/gki_aarch64_modules 2>/dev/null || echo 'drivers/kernelsu/kernelsu.ko' >> common/android/gki_aarch64_modules
           KBUILD_MODPOST_WARN=1 LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Package artifacts
