@@ -103,8 +103,6 @@ jobs:
           echo '# CONFIG_KASAN is not set' >> common/arch/arm64/configs/gki_defconfig
           echo 'CONFIG_LOCALVERSION="-g9cb2f620a9a8"' >> common/arch/arm64/configs/gki_defconfig
           echo '# CONFIG_LOCALVERSION_AUTO is not set' >> common/arch/arm64/configs/gki_defconfig
-          make -C common O=$PWD/out/defconfig-gen ARCH=arm64 gki_defconfig savedefconfig
-          cp out/defconfig-gen/defconfig common/arch/arm64/configs/gki_defconfig
 
       - name: Make working directory clean to avoid dirty
         working-directory: kernel
