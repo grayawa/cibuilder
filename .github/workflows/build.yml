@@ -115,6 +115,7 @@ jobs:
           git config --global user.email "bot@resukisu.org"
           git config --global user.name "ReSukiSUBot"
           cd common/ && git add -A && git commit -a -m "Add ReSukiSU"
+          git tag -a ksu -m "ReSukiSU"
           repo status
 
       - name: Setup ccache
