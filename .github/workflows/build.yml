@@ -136,4 +136,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kernelsu-ko
-          path: output/kernelsu.ko
+          path: kernel/output/kernelsu.ko
