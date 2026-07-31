@@ -23,9 +23,11 @@ jobs:
           mkdir -p kernel && cd kernel
 
           # All independent work in parallel:
-          # 1) Oculus Quest 3 kernel source
+          # 1) Oculus Quest 3 kernel source (device build 5227074.3810.520 = commit 8f32bdea)
           ( git clone --depth=1 -b oculus-quest3-kernel-master \
-              https://github.com/facebookincubator/oculus-linux-kernel.git common ) &
+              https://github.com/facebookincubator/oculus-linux-kernel.git common \
+            && git -C common fetch --depth=1 origin 8f32bdea05abf85dd10d6202963f7e9bdc55c717 \
+            && git -C common checkout FETCH_HEAD ) &
           P_OCULUS=$!
           # 2) clang 14 prebuilt (sparse: only clang-r450784c, ~5GB instead of 30GB)
           ( git clone --depth=1 -b llvm-r450784 --filter=blob:none --sparse \
@@ -44,14 +46,24 @@ jobs:
           wait $P_OCULUS $P_CLANG $P_KSU $P_APT
           wait $SWAP_PID
 
+          # Verify the clang toolchain was materialized by the sparse checkout
           CLANG_BIN=$(find $PWD/clang -type d -path '*clang-r45078*/bin' | sort | tail -1)
+          if [ -z "$CLANG_BIN" ] || [ ! -x "$CLANG_BIN/clang" ]; then
+            echo "clang toolchain not materialized. Contents of clang/:"
+            ls -la $PWD/clang/ 2>/dev/null || true
+            exit 1
+          fi
           echo "CLANG_BIN=$CLANG_BIN"
           echo "$CLANG_BIN" >> $GITHUB_PATH
+          export PATH="$CLANG_BIN:$PATH"
           clang --version
+          ld.lld --version
 
       - name: Add ReSukiSU, configure and build kernel
         working-directory: kernel
         run: |
+          export PATH="$(find $PWD/clang -type d -path '*clang-r45078*/bin' | sort | tail -1):$PATH"
+
           # Add ReSukiSU Kconfig to kernel tree, but keep the module itself off-tree
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
           sed -i '/obj-\$(CONFIG_KSU) += kernelsu\//d' common/drivers/Makefile
@@ -73,6 +85,8 @@ jobs:
       - name: Build ReSukiSU off-tree and package
         working-directory: kernel
         run: |
+          export PATH="$(find $PWD/clang -type d -path '*clang-r45078*/bin' | sort | tail -1):$PATH"
+
           make -C common O=$PWD/out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
             M=$PWD/KernelSU/kernel src=$PWD/KernelSU/kernel modules KBUILD_MODPOST_WARN=1 -j$(nproc)
