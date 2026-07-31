@@ -69,9 +69,9 @@ jobs:
           # Init and sync kernel source
           mkdir -p kernel && cd kernel
           repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
-          mkdir -p .repo/local_manifests
-          printf '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <project path="common" name="kernel/common" revision="android12-5.10.240_r00" />\n</manifest>\n' > .repo/local_manifests/pin.xml
           repo sync -j$(nproc) -c --no-tags
+          git -C common fetch --depth=1 https://android.googlesource.com/kernel/common tag android12-5.10.240_r00
+          git -C common checkout android12-5.10.240_r00
 
           wait $CLEANUP_PID
           df -h
