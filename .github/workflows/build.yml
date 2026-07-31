@@ -6,6 +6,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
     steps:
       - name: Create swapfile, install dependencies and repo
         run: |
@@ -69,7 +73,7 @@ jobs:
 
           # Init and sync kernel source (manifest branch pins the SPL kernel)
           mkdir -p kernel && cd kernel
-          repo init --depth=1 -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10-2025-09
+          repo init --depth=1 -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10-2025-09 --repo-rev=v2.16
           REMOTE_BRANCH=$(git ls-remote https://android.googlesource.com/kernel/common android12-5.10-2025-09)
           if grep -q deprecated <<< $REMOTE_BRANCH; then
             echo "Found deprecated branch: android12-5.10-2025-09"
@@ -94,7 +98,7 @@ jobs:
           sed -i '/config KSU/,/help/{s/default y/default m/}' common/drivers/kernelsu/Kconfig
           grep -q 'drivers/kernelsu/kernelsu.ko' common/android/gki_aarch64_modules 2>/dev/null || echo 'drivers/kernelsu/kernelsu.ko' >> common/android/gki_aarch64_modules
 
-      - name: Build kernel
+      - name: Prepare kernel config
         working-directory: kernel
         run: |
           sed -i '/CONFIG_KASAN/d; /CONFIG_KSU/d' common/arch/arm64/configs/gki_defconfig
@@ -103,33 +107,50 @@ jobs:
           echo '# CONFIG_LOCALVERSION_AUTO is not set' >> common/arch/arm64/configs/gki_defconfig
           make -C common O=$PWD/out/defconfig-gen ARCH=arm64 gki_defconfig savedefconfig
           cp out/defconfig-gen/defconfig common/arch/arm64/configs/gki_defconfig
-          grep -q 'drivers/kernelsu/kernelsu.ko' common/android/gki_aarch64_modules 2>/dev/null || echo 'drivers/kernelsu/kernelsu.ko' >> common/android/gki_aarch64_modules
 
+      - name: Make working directory clean to avoid dirty
+        working-directory: kernel
+        run: |
+          rm common/android/abi_gki_protected_exports_* || echo "No protected exports!"
+          git config --global user.email "bot@resukisu.org"
+          git config --global user.name "ReSukiSUBot"
+          cd common/ && git add -A && git commit -a -m "Add ReSukiSU"
+          repo status
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: gki-kernel-aarch64-5.10.240
+          max-size: 2G
+
+      - name: Build kernel
+        working-directory: kernel
+        run: |
           # Official KernelSU build.sh patches: don't abort on unknown symbol / modules.order / ABI check
           TARGET_FILE="build/kernel/build.sh"
           [ -e "$TARGET_FILE" ] || TARGET_FILE="build/build.sh"
           sed -i 's/needs unknown symbol/Dont abort when unknown symbol/g' $TARGET_FILE || true
           sed -i 's/if ! diff -u "\${KERNEL_DIR}\/\${MODULES_ORDER}" "\${OUT_DIR}\/modules\.order"; then/if false; then/g' $TARGET_FILE || true
           sed -i 's@${ROOT_DIR}/build/abi/compare_to_symbol_list@echo@g' $TARGET_FILE || true
+          sed -i 's/needs unknown symbol/Dont abort when unknown symbol/g' build/kernel/*.sh || true
 
-          KBUILD_MODPOST_WARN=1 LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+          KBUILD_MODPOST_WARN=1 LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang"
 
-      - name: Package artifacts
+      - name: Prepare artifacts
         working-directory: kernel
         run: |
           DIST_DIR=$(find out -type d -name dist | head -1)
+          if [ ! -e "$DIST_DIR" ]; then
+            DIST_DIR=dist
+          fi
           echo "DIST_DIR=$DIST_DIR"
           ls -la "$DIST_DIR"/
-          mkdir -p release
-          cp -v "$DIST_DIR"/kernelsu.ko release/ 2>/dev/null || find "$DIST_DIR" -name 'kernelsu.ko' -exec cp -v {} release/ \;
-          llvm-strip-15 -d release/kernelsu.ko || true
-          tar -czf gki-kernelsu.tar.gz -C release .
-          echo "Packaged contents:"
-          tar -tzf gki-kernelsu.tar.gz
+          mkdir -p output
+          llvm-strip-15 -d "$DIST_DIR"/kernelsu.ko
+          cp -v "$DIST_DIR"/kernelsu.ko ./output/android12-5.10.240_kernelsu.ko
 
-      - name: Upload artifact
+      - name: Upload LKM
         uses: actions/upload-artifact@v4
         with:
           name: gki-kernelsu
-          path: kernel/gki-kernelsu.tar.gz
-
+          path: kernel/output/*_kernelsu.ko
