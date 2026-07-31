@@ -6,10 +6,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_HARDLINK: "true"
     steps:
       - name: Create swapfile, install dependencies and repo
         run: |
@@ -115,12 +111,6 @@ jobs:
           git tag -a ksu -m "ReSukiSU"
           repo status
 
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1
-        with:
-          key: gki-kernel-aarch64-5.10.240
-          max-size: 2G
-
       - name: Build kernel
         working-directory: kernel
         run: |
@@ -132,7 +122,6 @@ jobs:
           sed -i 's@${ROOT_DIR}/build/abi/compare_to_symbol_list@echo@g' $TARGET_FILE || true
           sed -i 's/needs unknown symbol/Dont abort when unknown symbol/g' build/kernel/*.sh || true
 
-          export CC="/usr/bin/ccache clang"
           KBUILD_MODPOST_WARN=1 SKIP_MRPROPER=1 LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Prepare artifacts
