@@ -7,6 +7,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Setup env, install deps and clone sources (parallel)
         run: |
           # git-lfs is preinstalled on the runner; ensure the smudge filter is set
