@@ -9,9 +9,7 @@ jobs:
     steps:
       - name: Setup env, install deps and clone sources (parallel)
         run: |
-          # git-lfs is required: the clang prebuilt binaries are stored in Git LFS
-          sudo apt-get update
-          sudo apt-get install -y git-lfs
+          # git-lfs is preinstalled on the runner; ensure the smudge filter is set
           git lfs install
 
           # Disk cleanup in background (free space for the large clang toolchain)
@@ -58,9 +56,9 @@ jobs:
           ( git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU KernelSU ) &
           P_KSU=$!
           # 4) Build dependencies (git-lfs already installed above)
-          ( sudo apt-get install -y git gnupg flex bison build-essential zip curl zlib1g-dev \
-              libc6-dev-i386 libncurses-dev libgl1-mesa-dev libxml2-utils xsltproc unzip \
-              python3 device-tree-compiler llvm-15 ) &
+          ( sudo apt-get update && sudo apt-get install -y git gnupg flex bison build-essential \
+              zip curl zlib1g-dev libc6-dev-i386 libncurses-dev libgl1-mesa-dev libxml2-utils \
+              xsltproc unzip python3 device-tree-compiler llvm-15 ) &
           P_APT=$!
 
           # Wait for each job individually so a failure in any one is not masked
