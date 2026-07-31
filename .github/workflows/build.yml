@@ -26,7 +26,8 @@ jobs:
           sudo apt-get install -y git-core gnupg flex bison build-essential zip curl \
             zlib1g-dev libc6-dev-i386 libncurses-dev x11proto-core-dev libx11-dev \
             lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip \
-            fontconfig python3 python3-pip
+            fontconfig python3 python3-pip llvm-15
+          pip install ast-grep-cli
 
           # Install repo tool
           mkdir -p ~/.local/bin
@@ -88,8 +89,6 @@ jobs:
       - name: Setup for LKM
         working-directory: kernel
         run: |
-          pip install ast-grep-cli
-          sudo apt-get install llvm-15 -y
           ast-grep -U -p '$$$ check_exports($$$) {$$$}' -r '' common/scripts/mod/modpost.c
           ast-grep -U -p 'check_exports($$$);' -r '' common/scripts/mod/modpost.c
           sed -i '/config KSU/,/help/{s/default y/default m/}' common/drivers/kernelsu/Kconfig
