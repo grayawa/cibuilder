@@ -137,9 +137,3 @@ jobs:
         with:
           name: kernelsu-ko
           path: output/kernelsu.ko
-
-      - name: Debug via tmate (on failure)
-        if: failure()
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: true
