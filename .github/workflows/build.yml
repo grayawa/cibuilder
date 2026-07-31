@@ -88,7 +88,7 @@ jobs:
           make -C common O=$PWD/out/defconfig-gen ARCH=arm64 gki_defconfig savedefconfig
           cp out/defconfig-gen/defconfig common/arch/arm64/configs/gki_defconfig
           grep -q 'drivers/kernelsu/kernelsu.ko' common/android/gki_aarch64_modules 2>/dev/null || echo 'drivers/kernelsu/kernelsu.ko' >> common/android/gki_aarch64_modules
-          printf '. ${ROOT_DIR}/${COMMON_KERNEL_DIR}/build.config.gki.aarch64\nKMI_ENFORCED=0\n' > build.config.ksu
+          printf '. ${ROOT_DIR}/${KERNEL_DIR}/build.config.gki.aarch64\nKMI_ENFORCED=0\n' > build.config.ksu
           KBUILD_MODPOST_WARN=1 LTO=thin BUILD_CONFIG=build.config.ksu build/build.sh
 
       - name: Package artifacts
