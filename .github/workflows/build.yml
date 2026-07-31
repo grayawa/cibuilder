@@ -70,7 +70,7 @@ jobs:
           mkdir -p kernel && cd kernel
           repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
           repo sync -j$(nproc) -c --no-tags
-          git -C common fetch --depth=1 origin tag android12-5.10.240_r00
+          git -C common fetch --depth=1 https://android.googlesource.com/kernel/common tag android12-5.10.240_r00
           git -C common checkout android12-5.10.240_r00
 
           wait $CLEANUP_PID
