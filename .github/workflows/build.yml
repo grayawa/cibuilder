@@ -1,4 +1,4 @@
-name: GKI Build with ReSukiSU
+name: ReSukiSU LKM Build (Oculus Quest 3)
 
 on:
   workflow_dispatch:
@@ -7,9 +7,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Create swapfile, install dependencies and repo
+      - name: Setup env, install deps and clone sources (parallel)
         run: |
-          # Create swapfile in background (dd of 10GB takes time)
+          # Swapfile in background (dd of 10GB takes time)
           (
             sudo swapoff /swapfile 2>/dev/null || true
             sudo rm -f /swapfile
@@ -17,135 +17,73 @@ jobs:
             sudo chmod 600 /swapfile
             sudo mkswap /swapfile
             sudo swapon /swapfile
-            sudo swapon --show
           ) &
           SWAP_PID=$!
 
-          # Install dependencies
-          sudo apt-get update
-          sudo apt-get install -y git-core gnupg flex bison build-essential zip curl \
-            zlib1g-dev libc6-dev-i386 libncurses-dev x11proto-core-dev libx11-dev \
-            lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip \
-            fontconfig python3 python3-pip llvm-15 clang-15
-          sudo ln -sf /usr/bin/clang-15 /usr/bin/clang
-          pip install ast-grep-cli
+          mkdir -p kernel && cd kernel
 
-          # Install repo tool
-          mkdir -p ~/.local/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.local/bin/repo
-          chmod a+x ~/.local/bin/repo
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # All independent work in parallel:
+          # 1) Oculus Quest 3 kernel source
+          ( git clone --depth=1 -b oculus-quest3-kernel-master \
+              https://github.com/facebookincubator/oculus-linux-kernel.git common ) &
+          P_OCULUS=$!
+          # 2) clang 14 prebuilt (sparse: only clang-r450784c, ~5GB instead of 30GB)
+          ( git clone --depth=1 -b llvm-r450784 --filter=blob:none --sparse \
+              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang \
+            && git -C clang sparse-checkout set clang-r450784c ) &
+          P_CLANG=$!
+          # 3) ReSukiSU (off-tree module source)
+          ( git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU KernelSU ) &
+          P_KSU=$!
+          # 4) Build dependencies
+          ( sudo apt-get update && sudo apt-get install -y git gnupg flex bison build-essential \
+              zip curl zlib1g-dev libc6-dev-i386 libncurses-dev libgl1-mesa-dev libxml2-utils \
+              xsltproc unzip python3 device-tree-compiler llvm-15 ) &
+          P_APT=$!
 
+          wait $P_OCULUS $P_CLANG $P_KSU $P_APT
           wait $SWAP_PID
 
-      - name: Free up disk space and sync kernel source
-        run: |
-          # Start disk cleanup in background
-          (
-            sudo rm -rf \
-              /usr/share/dotnet \
-              /usr/local/lib/android \
-              /opt/ghc \
-              /opt/hostedtoolcache/CodeQL \
-              /usr/local/.ghcup \
-              /usr/local/share/powershell \
-              /usr/local/share/chromium \
-              /usr/local/lib/node_modules \
-              /opt/microsoft \
-              /usr/share/miniconda \
-              /usr/local/share/vcpkg \
-              /home/linuxbrew \
-              /usr/local/julia* \
-              /usr/share/swift \
-              /opt/hostedtoolcache/go \
-              /opt/hostedtoolcache/node \
-              /opt/hostedtoolcache/Python \
-              /opt/hostedtoolcache/PyPy \
-              /opt/hostedtoolcache/Ruby
-            sudo apt-get clean
-            sudo docker image prune -af || true
-            sudo journalctl --vacuum-size=10M
-          ) &
-          CLEANUP_PID=$!
+          CLANG_BIN=$(find $PWD/clang -type d -path '*clang-r45078*/bin' | sort | tail -1)
+          echo "CLANG_BIN=$CLANG_BIN"
+          echo "$CLANG_BIN" >> $GITHUB_PATH
+          clang --version
 
-          # Init and sync build system + toolchain from ACK manifest
-          mkdir -p kernel && cd kernel
-          repo init --depth=1 -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10-2025-09 --repo-rev=v2.16
-          repo sync -c -j$(nproc) --no-tags
-
-          # Replace ACK common with Oculus Quest 3 kernel source
-          rm -rf common
-          git clone --depth=1 -b oculus-quest3-kernel-master https://github.com/facebookincubator/oculus-linux-kernel.git common
-
-          wait $CLEANUP_PID
-          df -h
-
-      - name: Add ReSukiSU support
+      - name: Add ReSukiSU, configure and build kernel
         working-directory: kernel
         run: |
+          # Add ReSukiSU Kconfig to kernel tree, but keep the module itself off-tree
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          sed -i '/obj-\$(CONFIG_KSU) += kernelsu\//d' common/drivers/Makefile
 
-      - name: Setup for LKM
-        working-directory: kernel
-        run: |
-          ast-grep -U -p '$$$ check_exports($$$) {$$$}' -r '' common/scripts/mod/modpost.c
-          ast-grep -U -p 'check_exports($$$);' -r '' common/scripts/mod/modpost.c
-          sed -i '/config KSU/,/help/{s/default y/default m/}' common/drivers/kernelsu/Kconfig
-          grep -q 'drivers/kernelsu/kernelsu.ko' common/android/gki_aarch64_modules 2>/dev/null || echo 'drivers/kernelsu/kernelsu.ko' >> common/android/gki_aarch64_modules
-
-      - name: Prepare kernel config
-        working-directory: kernel
-        run: |
+          # Kernel config: minimal GKI (no QCOM/Meta vendor drivers), match device vermagic
           sed -i '/CONFIG_KASAN/d; /CONFIG_KSU/d' common/arch/arm64/configs/gki_defconfig
           echo '# CONFIG_KASAN is not set' >> common/arch/arm64/configs/gki_defconfig
+          echo 'CONFIG_KSU=m' >> common/arch/arm64/configs/gki_defconfig
           echo 'CONFIG_LOCALVERSION="-g9cb2f620a9a8"' >> common/arch/arm64/configs/gki_defconfig
           echo '# CONFIG_LOCALVERSION_AUTO is not set' >> common/arch/arm64/configs/gki_defconfig
           sed -i 's/echo "+"/echo ""/g' common/scripts/setlocalversion
-          # Make Kconfig parsing independent of the CC/LD env (Meta kernel quirk)
-          sed -i 's|$(CC) --version|gcc --version|g' common/scripts/Kconfig.include
-          sed -i 's|$(LD) --version|ld --version|g' common/scripts/Kconfig.include
-          sed -i 's|gcc-version.sh $(CC)|gcc-version.sh gcc|g' common/init/Kconfig
-          sed -i 's|clang-version.sh $(CC)|clang-version.sh gcc|g' common/init/Kconfig
 
-      - name: Make working directory clean to avoid dirty
+          # Build kernel to vmlinux (CC=clang resolves Kconfig; thin LTO is faster)
+          make -C common O=$PWD/out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- LTO=thin gki_defconfig
+          make -C common O=$PWD/out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- LTO=thin -j$(nproc)
+
+      - name: Build ReSukiSU off-tree and package
         working-directory: kernel
         run: |
-          rm common/android/abi_gki_protected_exports_* || echo "No protected exports!"
-          git config --global user.email "bot@resukisu.org"
-          git config --global user.name "ReSukiSUBot"
-          cd common/ && git add -A && git commit -a -m "Add ReSukiSU"
-          git tag -a ksu -m "ReSukiSU"
-          repo status
+          make -C common O=$PWD/out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            M=$PWD/KernelSU/kernel src=$PWD/KernelSU/kernel modules KBUILD_MODPOST_WARN=1 -j$(nproc)
 
-      - name: Build kernel
-        working-directory: kernel
-        run: |
-          # Official KernelSU build.sh patches: don't abort on unknown symbol / modules.order / ABI check
-          TARGET_FILE="build/kernel/build.sh"
-          [ -e "$TARGET_FILE" ] || TARGET_FILE="build/build.sh"
-          sed -i 's/needs unknown symbol/Dont abort when unknown symbol/g' $TARGET_FILE || true
-          sed -i 's/if ! diff -u "\${KERNEL_DIR}\/\${MODULES_ORDER}" "\${OUT_DIR}\/modules\.order"; then/if false; then/g' $TARGET_FILE || true
-          sed -i 's@${ROOT_DIR}/build/abi/compare_to_symbol_list@echo@g' $TARGET_FILE || true
-          sed -i 's/needs unknown symbol/Dont abort when unknown symbol/g' build/kernel/*.sh || true
-
-          export CC=clang
-          KBUILD_MODPOST_WARN=1 SKIP_MRPROPER=1 LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
-
-      - name: Prepare artifacts
-        working-directory: kernel
-        run: |
-          DIST_DIR=$(find out -type d -name dist | head -1)
-          if [ ! -e "$DIST_DIR" ]; then
-            DIST_DIR=dist
-          fi
-          echo "DIST_DIR=$DIST_DIR"
-          ls -la "$DIST_DIR"/
           mkdir -p output
-          llvm-strip-15 -d "$DIST_DIR"/kernelsu.ko
-          cp -v "$DIST_DIR"/kernelsu.ko ./output/android12-5.10.240_kernelsu.ko
+          cp KernelSU/kernel/kernelsu.ko output/kernelsu.ko
+          llvm-strip-15 -d output/kernelsu.ko || true
+          ls -la output/
 
-      - name: Upload LKM
+      - name: Upload kernelsu.ko
         uses: actions/upload-artifact@v4
         with:
-          name: gki-kernelsu
-          path: kernel/output/*_kernelsu.ko
+          name: kernelsu-ko
+          path: output/kernelsu.ko
