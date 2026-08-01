@@ -93,8 +93,8 @@ jobs:
         run: |
           export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
 
-          # Add ReSukiSU Kconfig to kernel tree, but keep the module itself off-tree
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          # Add ReSukiSU Kconfig to kernel tree (sync-upstream branch), keep module off-tree
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/sync-upstream/kernel/setup.sh" | bash -s sync-upstream
           sed -i '/obj-\$(CONFIG_KSU) += kernelsu\//d' common/drivers/Makefile
 
           # Kernel config: use the DEVICE config (matches oculus kernel's custom code),
