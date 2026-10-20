@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       kernel_ref:
-        description: "Meta kernel source commit (published 5243367.4880.520; NOT the exact 5243367.3600.520 build)"
+        description: "Meta Quest 3 kernel source commit for 5243367.3600.520"
         required: true
-        default: "bcbad93099abe941ec56a53d2bd6e1a66e951981"
+        default: "dbc2bc83a2b673f5d1c24ee9dadb0cd708ffda3f"
         type: string
       bakasu_ref:
         description: "Pinned BakaSU source commit"
@@ -55,7 +55,7 @@ jobs:
           if [[ "$CONFIG_FILE" == device_defconfig ]]; then
             echo "::warning::This is the existing 5.10.240-era config, NOT verified for the 5.10.246 target."
           fi
-          echo "::notice::Meta branch HEAD is sourced from build 5243367.4880.520; target device runs 5243367.3600.520. Matching vermagic is not proof of matching module CRCs or ABI."
+          echo "::notice::Meta commit dbc2bc83a2b673f5d1c24ee9dadb0cd708ffda3f is explicitly tagged 5243367.3600.520. Matching vermagic and source build number alone are not proof of module CRC/ABI compatibility."
           grep -q '^CONFIG_MODULES=y$' "$CONFIG_FILE" || { echo "::error::CONFIG_MODULES is not enabled"; exit 1; }
           sha256sum "$CONFIG_FILE"
 
@@ -185,7 +185,7 @@ jobs:
             echo "Config SHA256: $(sha256sum "$GITHUB_WORKSPACE/$CONFIG_FILE")"
             echo "Module vermagic: $mod_vermagic"
             echo "Module SHA256: $(sha256sum output/kernelsu.ko)"
-            echo "Exact target kernel source / symbol CRC equivalence: NOT VERIFIED"
+            echo "Meta source commit message matches firmware build 5243367.3600.520; runtime symbol CRC/ABI equivalence: NOT VERIFIED"
             echo "Do not load on hardware without separate symbol/ABI validation."
           } > output/BUILD-INFO.txt
           cat output/BUILD-INFO.txt
