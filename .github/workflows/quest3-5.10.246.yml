@@ -1,0 +1,193 @@
+name: BakaSU LKM (Quest 3 5.10.246, experimental)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: "Meta kernel source commit (published 5243367.4880.520; NOT the exact 5243367.3600.520 build)"
+        required: true
+        default: "bcbad93099abe941ec56a53d2bd6e1a66e951981"
+        type: string
+      bakasu_ref:
+        description: "Pinned BakaSU source commit"
+        required: true
+        default: "7c383cfeef3a2ac450f2f1273dae74bd50356d31"
+        type: string
+      config_file:
+        description: "Device-exported kernel config (new file required for accurate 5.10.246 build)"
+        required: true
+        default: device_defconfig_5.10.246
+        type: choice
+        options:
+          - device_defconfig_5.10.246
+          - device_defconfig
+
+permissions:
+  contents: read
+
+env:
+  TARGET_RELEASE: 5.10.246-gd7102a837402
+  TARGET_LOCALVERSION: -gd7102a837402
+  KERNEL_REF: ${{ inputs.kernel_ref }}
+  BAKASU_REF: ${{ inputs.bakasu_ref }}
+  CONFIG_FILE: ${{ inputs.config_file }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out builder
+        uses: actions/checkout@v4
+
+      - name: Check input configuration before expensive builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$CONFIG_FILE" in
+            device_defconfig_5.10.246|device_defconfig) ;;
+            *) echo "::error::Unrecognized config filename"; exit 1 ;;
+          esac
+          if [[ ! -s "$GITHUB_WORKSPACE/$CONFIG_FILE" ]]; then
+            echo "::error::Missing $CONFIG_FILE. Export this firmware's /proc/config.gz and commit it as device_defconfig_5.10.246."
+            exit 1
+          fi
+          if [[ "$CONFIG_FILE" == device_defconfig ]]; then
+            echo "::warning::This is the existing 5.10.240-era config, NOT verified for the 5.10.246 target."
+          fi
+          echo "::notice::Meta branch HEAD is sourced from build 5243367.4880.520; target device runs 5243367.3600.520. Matching vermagic is not proof of matching module CRCs or ABI."
+          grep -q '^CONFIG_MODULES=y$' "$CONFIG_FILE" || { echo "::error::CONFIG_MODULES is not enabled"; exit 1; }
+          sha256sum "$CONFIG_FILE"
+
+      - name: Prepare build dependencies and available disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          sudo apt-get update
+          sudo apt-get install -y git git-lfs flex bison build-essential \
+            bc libelf-dev libssl-dev libncurses-dev dwarves cpio kmod \
+            python3 device-tree-compiler zlib1g-dev llvm-15 lld-15
+          git lfs install
+          sudo fallocate -l 8G /mnt/quest3-build.swap
+          sudo chmod 600 /mnt/quest3-build.swap
+          sudo mkswap /mnt/quest3-build.swap
+          sudo swapon /mnt/quest3-build.swap
+          df -h .
+
+      - name: Fetch pinned kernel, BakaSU and Android Clang
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p kernel
+          cd kernel
+
+          git clone --depth=1 --branch oculus-quest3-kernel-master \
+            https://github.com/facebookincubator/oculus-linux-kernel.git common
+          git -C common fetch --depth=1 origin "$KERNEL_REF"
+          git -C common checkout --detach FETCH_HEAD
+          echo "Meta commit: $(git -C common rev-parse HEAD)"
+
+          git clone --depth=1 --branch main https://github.com/Baka-SU/BakaSU.git KernelSU
+          git -C KernelSU fetch --depth=1 origin "$BAKASU_REF"
+          git -C KernelSU checkout --detach FETCH_HEAD
+          echo "BakaSU commit: $(git -C KernelSU rev-parse HEAD)"
+
+          git clone --depth=1 --sparse --branch llvm-r450784 \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang
+          git -C clang sparse-checkout set clang-r450784c
+          git -C clang lfs pull
+          test -x "$PWD/clang/clang-r450784c/bin/clang"
+          echo "$PWD/clang/clang-r450784c/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare Meta kernel for external BakaSU module
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
+
+          # Integrate Kconfig only. Keep kernelsu.ko external (CONFIG_KSU=m).
+          ln -s "$(realpath --relative-to=common/drivers KernelSU/kernel)" common/drivers/kernelsu
+          sed -i '/^endmenu$/i source "drivers/kernelsu/Kconfig"' common/drivers/Kconfig
+
+          cp "$GITHUB_WORKSPACE/$CONFIG_FILE" common/arch/arm64/configs/gki_defconfig
+          CFG=common/arch/arm64/configs/gki_defconfig
+          common/scripts/config --file "$CFG" \
+            -d QCA_CLD_WLAN -d OCULUS -d META -d QCOM_KGSL -d KASAN \
+            -m KSU -e KSU_TRACEPOINT_HOOK -e KSU_MULTI_MANAGER_SUPPORT \
+            --set-str LOCALVERSION "$TARGET_LOCALVERSION" -d LOCALVERSION_AUTO
+
+          # The modified working tree would otherwise append '+' to kernelrelease.
+          sed -i 's/echo "+"/echo ""/g' common/scripts/setlocalversion
+
+          make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang CROSS_COMPILE=aarch64-linux-gnu- LTO=thin gki_defconfig
+
+          actual="$(make -s -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)"
+          echo "Built kernelrelease: $actual"
+          test "$actual" = "$TARGET_RELEASE" || {
+            echo "::error::kernelrelease mismatch: expected $TARGET_RELEASE, got $actual"
+            exit 1
+          }
+          grep '^CONFIG_\(KSU\|MODVERSIONS\|CFI_CLANG\|LTO_CLANG\)' out/.config || true
+          test "$(grep -c '^CONFIG_KSU=m$' out/.config)" = 1
+
+      - name: Build matching kernel objects and Module.symvers
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
+          make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang CROSS_COMPILE=aarch64-linux-gnu- LTO=thin \
+            vmlinux modules_prepare -j"$(nproc)"
+          test -s out/vmlinux
+          test -s out/Module.symvers || {
+            echo "::error::Module.symvers missing. modules_prepare alone is insufficient for CONFIG_MODVERSIONS=y."
+            exit 1
+          }
+
+      - name: Build external BakaSU LKM and verify metadata
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
+          # Do not use KBUILD_MODPOST_WARN=1: unresolved module imports must fail the build.
+          make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang CROSS_COMPILE=aarch64-linux-gnu- \
+            M="$PWD/KernelSU/kernel" src="$PWD/KernelSU/kernel" \
+            modules -j"$(nproc)"
+
+          mkdir -p output
+          cp KernelSU/kernel/kernelsu.ko output/kernelsu.ko
+          llvm-strip -d output/kernelsu.ko
+
+          mod_vermagic="$(modinfo -F vermagic output/kernelsu.ko)"
+          echo "Module vermagic: $mod_vermagic"
+          case "$mod_vermagic" in
+            "$TARGET_RELEASE "*) ;;
+            *) echo "::error::Module vermagic mismatch: $mod_vermagic"; exit 1 ;;
+          esac
+          {
+            echo "EXPERIMENTAL: not verified as ABI-compatible with Quest 3 build 52433670036000520."
+            echo "Target release: $TARGET_RELEASE"
+            echo "Meta kernel commit: $(git -C common rev-parse HEAD)"
+            echo "BakaSU commit: $(git -C KernelSU rev-parse HEAD)"
+            echo "Config file: $CONFIG_FILE"
+            echo "Config SHA256: $(sha256sum "$GITHUB_WORKSPACE/$CONFIG_FILE")"
+            echo "Module vermagic: $mod_vermagic"
+            echo "Module SHA256: $(sha256sum output/kernelsu.ko)"
+            echo "Exact target kernel source / symbol CRC equivalence: NOT VERIFIED"
+            echo "Do not load on hardware without separate symbol/ABI validation."
+          } > output/BUILD-INFO.txt
+          cat output/BUILD-INFO.txt
+
+      - name: Upload experimental build and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: quest3-5.10.246-bakasu-lkm-UNVERIFIED
+          path: kernel/output/
+          if-no-files-found: error
