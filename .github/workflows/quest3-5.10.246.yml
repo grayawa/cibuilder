@@ -95,17 +95,17 @@ jobs:
 
           git clone --depth=1 --sparse --branch llvm-r450784 \
             https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang
-          git -C clang sparse-checkout set clang-r450784e
+          git -C clang sparse-checkout set clang-r450784c
           git -C clang lfs pull
-          test -x "$PWD/clang/clang-r450784e/bin/clang"
-          echo "$PWD/clang/clang-r450784e/bin" >> "$GITHUB_PATH"
+          test -x "$PWD/clang/clang-r450784c/bin/clang"
+          echo "$PWD/clang/clang-r450784c/bin" >> "$GITHUB_PATH"
 
       - name: Prepare Meta kernel for external BakaSU module
         working-directory: kernel
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$PWD/clang/clang-r450784e/bin:$PATH"
+          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
 
           # Integrate Kconfig only. Keep kernelsu.ko external (CONFIG_KSU=m).
           ln -s "$(realpath --relative-to=common/drivers KernelSU/kernel)" common/drivers/kernelsu
@@ -144,7 +144,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$PWD/clang/clang-r450784e/bin:$PATH"
+          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
           make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang CROSS_COMPILE=aarch64-linux-gnu- \
             vmlinux modules_prepare -j"$(nproc)"
@@ -159,7 +159,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$PWD/clang/clang-r450784e/bin:$PATH"
+          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
           # Do not use KBUILD_MODPOST_WARN=1: unresolved module imports must fail the build.
           make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang CROSS_COMPILE=aarch64-linux-gnu- \
