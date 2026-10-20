@@ -59,3 +59,28 @@ git clone oculus-linux-kernel (commit 8f32bdea)
 ## 协议
 
 本项目使用 GPL-3.0 许可证。详见 [LICENSE](LICENSE)。
+
+## Quest 3 固件 52433670036000520 / 内核 5.10.246（实验性）
+
+另有独立的 **BakaSU LKM (Quest 3 5.10.246, experimental)** GitHub Actions 工作流：
+[quest3-5.10.246.yml](.github/workflows/quest3-5.10.246.yml)。
+原 **ReSukiSU LKM Build (Oculus Quest 3)** 工作流不变，继续对应旧版 5.10.240。
+
+### 运行之前先导出当前设备的完整配置
+
+在可运行 adb 的 **Linux / WSL** 中（避免 Windows PowerShell 5.1 重定向编码问题）：
+
+```bash
+adb exec-out 'zcat /proc/config.gz' > device_defconfig_5.10.246
+grep -E 'CONFIG_(MODULES|MODVERSIONS|MODULE_SIG|FTRACE_SYSCALLS)' device_defconfig_5.10.246
+```
+
+将新生成的 `device_defconfig_5.10.246` 提交到运行工作流的同一分支，然后在 **Actions → BakaSU LKM (Quest 3 5.10.246, experimental) → Run workflow** 中选择该分支运行。若缺少此文件，工作流会在下载大体积源码和工具链之前失败。工作流也允许手动选择仓库原有的 `device_defconfig`，但那是旧版 5.10.240 的设备配置，不建议作为当前设备的正式构建依据。
+
+### 重要的兼容性限制
+
+- 目标设备 `uname -r` 为 `5.10.246-gd7102a837402`，但公开的 Meta `oculus-quest3-kernel-master` HEAD（固定为 `bcbad93099abe941ec56a53d2bd6e1a66e951981`）对应的是更新的 `5243367.4880.520`，**尚未找到设备固件 `5243367.3600.520` 的精确源码提交**。
+- 目标启用了 `CONFIG_MODVERSIONS=y`；即使 `kernelsu.ko` 的 `vermagic` 完全一致，也**不能保证模块符号 CRC、导出符号和实际内核 ABI 一致**。
+- 新工作流使用现行 [BakaSU](https://github.com/Baka-SU/BakaSU) 源码，并固定可追溯的提交；不再依赖旧的 `ReSukiSU/ReSukiSU` 地址，也不再通过 `curl | bash` 执行远程脚本。
+- 工作流只进行离线编译、严格 modpost 和产物元数据验证，不会连接或修改设备。产物名称带 `UNVERIFIED`，并附有 `BUILD-INFO.txt`。**不要因为 Actions 通过就直接加载到 Quest 3；需要进一步核对实际固件的内核源码、模块符号 CRC 和 ABI。**
+- 如果之后取得准确的 Meta 内核源码 commit，可在手动运行时使用 `kernel_ref` 输入替换默认值。`bakasu_ref` 同样可以指定其他已验证版本。
