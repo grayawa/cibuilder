@@ -79,7 +79,7 @@ grep -E 'CONFIG_(MODULES|MODVERSIONS|MODULE_SIG|FTRACE_SYSCALLS)' device_defconf
 
 ### 重要的兼容性限制
 
-- 目标设备 `uname -r` 为 `5.10.246-gd7102a837402`，但公开的 Meta `oculus-quest3-kernel-master` HEAD（固定为 `bcbad93099abe941ec56a53d2bd6e1a66e951981`）对应的是更新的 `5243367.4880.520`，**尚未找到设备固件 `5243367.3600.520` 的精确源码提交**。
+- 已找到 Meta 官方精确对应固件 `5243367.3600.520` 的 [内核源码提交 `dbc2bc83a2b673f5d1c24ee9dadb0cd708ffda3f`](https://github.com/facebookincubator/oculus-linux-kernel/commit/dbc2bc83a2b673f5d1c24ee9dadb0cd708ffda3f)，其 Makefile 版本为 Linux 5.10.246。设备 `uname -r` 为 `5.10.246-gd7102a837402`；设备运行版本后缀与 Git 提交 SHA 不必相同。仍需验证运行内核与编译出的模块在符号 CRC 和 ABI 上兼容。
 - 目标启用了 `CONFIG_MODVERSIONS=y`；即使 `kernelsu.ko` 的 `vermagic` 完全一致，也**不能保证模块符号 CRC、导出符号和实际内核 ABI 一致**。
 - 新工作流使用现行 [BakaSU](https://github.com/Baka-SU/BakaSU) 源码，并固定可追溯的提交；不再依赖旧的 `ReSukiSU/ReSukiSU` 地址，也不再通过 `curl | bash` 执行远程脚本。
 - 工作流只进行离线编译、严格 modpost 和产物元数据验证，不会连接或修改设备。产物名称带 `UNVERIFIED`，并附有 `BUILD-INFO.txt`。**不要因为 Actions 通过就直接加载到 Quest 3；需要进一步核对实际固件的内核源码、模块符号 CRC 和 ABI。**
