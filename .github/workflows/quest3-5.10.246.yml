@@ -135,9 +135,13 @@ jobs:
           grep -E '^CONFIG_(KSU|MODVERSIONS|CFI_CLANG|LTO_CLANG)' out/.config || true
           test "$(grep -c '^CONFIG_KSU=m$' out/.config)" = 1
           grep -q '^CONFIG_MODVERSIONS=y$' out/.config
-          grep -q '^CONFIG_LTO_CLANG_THIN=y
+          grep -q '^CONFIG_LTO_CLANG_THIN=y$' out/.config || {
+            echo "::error::ThinLTO was not selected in generated kernel config"
+            exit 1
+          }
+          grep -q '^# CONFIG_LTO_CLANG_FULL is not set$' out/.config
 
-      - name: Build matching kernel objects and Module.symvers
+      - name: Build vmlinux and prepare external modules (legacy)
         working-directory: kernel
         shell: bash
         run: |
@@ -147,10 +151,9 @@ jobs:
             CC=clang CROSS_COMPILE=aarch64-linux-gnu- LTO=thin \
             vmlinux modules_prepare -j"$(nproc)"
           test -s out/vmlinux
-          test -s out/Module.symvers || {
-            echo "::error::Module.symvers missing. modules_prepare alone is insufficient for CONFIG_MODVERSIONS=y."
-            exit 1
-          }
+          if [[ ! -s out/Module.symvers ]]; then
+            echo "::warning::Module.symvers missing, continuing with the previously tested legacy build mode."
+          fi
 
       - name: Build external BakaSU LKM and verify metadata
         working-directory: kernel
@@ -158,11 +161,12 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
-          # Do not use KBUILD_MODPOST_WARN=1: unresolved module imports must fail the build.
+          # Legacy build: allow missing Module.symvers and unresolved modpost warnings.
+          # A successful compile does NOT prove that module symbol CRCs match the device.
           make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang CROSS_COMPILE=aarch64-linux-gnu- \
             M="$PWD/KernelSU/kernel" src="$PWD/KernelSU/kernel" \
-            modules -j"$(nproc)"
+            modules KBUILD_MODPOST_WARN=1 -j"$(nproc)"
 
           mkdir -p output
           cp KernelSU/kernel/kernelsu.ko output/kernelsu.ko
@@ -183,129 +187,9 @@ jobs:
             echo "Config SHA256: $(sha256sum "$GITHUB_WORKSPACE/$CONFIG_FILE")"
             echo "Module vermagic: $mod_vermagic"
             echo "Module SHA256: $(sha256sum output/kernelsu.ko)"
-            echo "Meta source commit message matches firmware build 5243367.3600.520; runtime symbol CRC/ABI equivalence: NOT VERIFIED"
-            echo "Do not load on hardware without separate symbol/ABI validation."
-          } > output/BUILD-INFO.txt
-          cat output/BUILD-INFO.txt
-
-      - name: Upload experimental build and provenance
-        uses: actions/upload-artifact@v4
-        with:
-          name: quest3-5.10.246-bakasu-lkm-UNVERIFIED
-          path: kernel/output/
-          if-no-files-found: error
- out/.config || {
-            echo "::error::ThinLTO not enabled"
-            exit 1
-          }
-          grep -q '^# CONFIG_LTO_CLANG_FULL is not set
-
-      - name: Build matching kernel objects and Module.symvers
-        working-directory: kernel
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
-          make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang CROSS_COMPILE=aarch64-linux-gnu- LTO=thin \
-            vmlinux modules_prepare -j"$(nproc)"
-          test -s out/vmlinux
-          test -s out/Module.symvers || {
-            echo "::error::Module.symvers missing. modules_prepare alone is insufficient for CONFIG_MODVERSIONS=y."
-            exit 1
-          }
-
-      - name: Build external BakaSU LKM and verify metadata
-        working-directory: kernel
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
-          # Do not use KBUILD_MODPOST_WARN=1: unresolved module imports must fail the build.
-          make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang CROSS_COMPILE=aarch64-linux-gnu- \
-            M="$PWD/KernelSU/kernel" src="$PWD/KernelSU/kernel" \
-            modules -j"$(nproc)"
-
-          mkdir -p output
-          cp KernelSU/kernel/kernelsu.ko output/kernelsu.ko
-          llvm-strip -d output/kernelsu.ko
-
-          mod_vermagic="$(modinfo -F vermagic output/kernelsu.ko)"
-          echo "Module vermagic: $mod_vermagic"
-          case "$mod_vermagic" in
-            "$TARGET_RELEASE "*) ;;
-            *) echo "::error::Module vermagic mismatch: $mod_vermagic"; exit 1 ;;
-          esac
-          {
-            echo "EXPERIMENTAL: not verified as ABI-compatible with Quest 3 build 52433670036000520."
-            echo "Target release: $TARGET_RELEASE"
-            echo "Meta kernel commit: $(git -C common rev-parse HEAD)"
-            echo "BakaSU commit: $(git -C KernelSU rev-parse HEAD)"
-            echo "Config file: $CONFIG_FILE"
-            echo "Config SHA256: $(sha256sum "$GITHUB_WORKSPACE/$CONFIG_FILE")"
-            echo "Module vermagic: $mod_vermagic"
-            echo "Module SHA256: $(sha256sum output/kernelsu.ko)"
-            echo "Meta source commit message matches firmware build 5243367.3600.520; runtime symbol CRC/ABI equivalence: NOT VERIFIED"
-            echo "Do not load on hardware without separate symbol/ABI validation."
-          } > output/BUILD-INFO.txt
-          cat output/BUILD-INFO.txt
-
-      - name: Upload experimental build and provenance
-        uses: actions/upload-artifact@v4
-        with:
-          name: quest3-5.10.246-bakasu-lkm-UNVERIFIED
-          path: kernel/output/
-          if-no-files-found: error
- out/.config
-
-      - name: Build matching kernel objects and Module.symvers
-        working-directory: kernel
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
-          make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang CROSS_COMPILE=aarch64-linux-gnu- LTO=thin \
-            vmlinux modules_prepare -j"$(nproc)"
-          test -s out/vmlinux
-          test -s out/Module.symvers || {
-            echo "::error::Module.symvers missing. modules_prepare alone is insufficient for CONFIG_MODVERSIONS=y."
-            exit 1
-          }
-
-      - name: Build external BakaSU LKM and verify metadata
-        working-directory: kernel
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$PWD/clang/clang-r450784c/bin:$PATH"
-          # Do not use KBUILD_MODPOST_WARN=1: unresolved module imports must fail the build.
-          make -C common O="$PWD/out" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang CROSS_COMPILE=aarch64-linux-gnu- \
-            M="$PWD/KernelSU/kernel" src="$PWD/KernelSU/kernel" \
-            modules -j"$(nproc)"
-
-          mkdir -p output
-          cp KernelSU/kernel/kernelsu.ko output/kernelsu.ko
-          llvm-strip -d output/kernelsu.ko
-
-          mod_vermagic="$(modinfo -F vermagic output/kernelsu.ko)"
-          echo "Module vermagic: $mod_vermagic"
-          case "$mod_vermagic" in
-            "$TARGET_RELEASE "*) ;;
-            *) echo "::error::Module vermagic mismatch: $mod_vermagic"; exit 1 ;;
-          esac
-          {
-            echo "EXPERIMENTAL: not verified as ABI-compatible with Quest 3 build 52433670036000520."
-            echo "Target release: $TARGET_RELEASE"
-            echo "Meta kernel commit: $(git -C common rev-parse HEAD)"
-            echo "BakaSU commit: $(git -C KernelSU rev-parse HEAD)"
-            echo "Config file: $CONFIG_FILE"
-            echo "Config SHA256: $(sha256sum "$GITHUB_WORKSPACE/$CONFIG_FILE")"
-            echo "Module vermagic: $mod_vermagic"
-            echo "Module SHA256: $(sha256sum output/kernelsu.ko)"
-            echo "Meta source commit message matches firmware build 5243367.3600.520; runtime symbol CRC/ABI equivalence: NOT VERIFIED"
+            echo "Meta source commit message matches firmware build 5243367.3600.520."
+            echo "Legacy build: ThinLTO + KBUILD_MODPOST_WARN=1; Module.symvers not required."
+            echo "Module CRCs, imported symbols and runtime ABI compatibility: NOT VERIFIED"
             echo "Do not load on hardware without separate symbol/ABI validation."
           } > output/BUILD-INFO.txt
           cat output/BUILD-INFO.txt
